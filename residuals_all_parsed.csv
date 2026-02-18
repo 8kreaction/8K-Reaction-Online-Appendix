@@ -1,0 +1,17 @@
+dependent_variable,residual_sd,Dependent_Variable,Window,Horizon,Retail_Flag
+lag_vol_66per,0.0141592046292663,Total Volume,48 hours,Pre,Not Retail
+lag_vol_33per,0.0075044350677337,Total Volume,24 hours,Pre,Not Retail
+lag_vol_4per,0.001358836577641,Total Volume,2 hours,Pre,Not Retail
+lag_vol_2per,0.0007375684971314902,Total Volume,1 hour,Pre,Not Retail
+log_vol_2per,0.0007375611624251668,Total Volume,1 hour,Post,Not Retail
+log_vol_4per,0.0013588197067943,Total Volume,2 hours,Post,Not Retail
+log_vol_33per,0.0075052171902567,Total Volume,24 hours,Post,Not Retail
+log_vol_66per,0.0141617859120433,Total Volume,48 hours,Post,Not Retail
+lag_absret_66per,0.0256570104540478,Absolute Returns,48 hours,Pre,Not Retail
+lag_absret_33per,0.0189015191871113,Absolute Returns,24 hours,Pre,Not Retail
+lag_absret_4per,0.0086179498463476,Absolute Returns,2 hours,Pre,Not Retail
+lag_absret_2per,0.0064981691154652,Absolute Returns,1 hour,Pre,Not Retail
+abs_ret_2_per,0.0064998357820767,Absolute Returns,1 hour,Post,Not Retail
+abs_ret_4_per,0.0086187214754511,Absolute Returns,2 hours,Post,Not Retail
+abs_ret_33_per,0.0189015513715392,Absolute Returns,24 hours,Post,Not Retail
+abs_ret_66_per,0.0256579678402001,Absolute Returns,48 hours,Post,Not Retail

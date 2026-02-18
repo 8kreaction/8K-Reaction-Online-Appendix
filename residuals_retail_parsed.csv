@@ -1,0 +1,9 @@
+dependent_variable,residual_sd,Dependent_Variable,Window,Horizon,Retail_Flag
+lag_vol_66per,0.0030512030807406,Total Volume,48 hours,Pre,Retail
+lag_vol_33per,0.0015653728575944,Total Volume,24 hours,Pre,Retail
+lag_vol_4per,0.0002298976476771711,Total Volume,2 hours,Pre,Retail
+lag_vol_2per,0.00012284667731317464,Total Volume,1 hour,Pre,Retail
+log_vol_2per,0.00012284557970863231,Total Volume,1 hour,Post,Retail
+log_vol_4per,0.00022989627682660796,Total Volume,2 hours,Post,Retail
+log_vol_33per,0.0015657399592164,Total Volume,24 hours,Post,Retail
+log_vol_66per,0.0030523435271787,Total Volume,48 hours,Post,Retail
