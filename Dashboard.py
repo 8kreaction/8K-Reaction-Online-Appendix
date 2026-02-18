@@ -159,7 +159,7 @@ materiality_sig_threshold = st.sidebar.slider(
 # Coefficient scaling toggle
 scale_by_sd = st.sidebar.checkbox(
     "Scale coefficients by residual standard deviations",
-    value=False
+    value=True
 )
 
 # Materiality threshold (changes based on scaling)
@@ -174,10 +174,10 @@ if scale_by_sd:
 else:
     materiality_threshold = st.sidebar.slider(
         "Materiality Threshold (basis points)",
-        min_value=1,
-        max_value=50,
-        value=10,
-        step=1
+        min_value=5,
+        max_value=100,
+        value=25,
+        step=5
     ) / 10000  # Convert basis points to decimal
 
 # Filing-level statistics toggle
