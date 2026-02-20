@@ -184,7 +184,7 @@ else:
 show_filing_stats = st.sidebar.checkbox(
     "Show filing-level statistics",
     value=False,
-    help="Calculate and display statistics about filings (slower to compute)"
+    help="Calculate and display statistics about filings (Note: Displaying filing statistics significantly slows down the dashboard)"
 )
 
 # Item 9.01 inclusion toggle (only show if filing stats are enabled)
@@ -554,7 +554,7 @@ def build_classification_table():
                 row_data['Returns_Post'] = "N/A"
 
             # Retail flag
-            row_data['Retail_Flag'] = "🔔" if has_retail_flag(item) else ""
+            row_data['Retail_Flag'] = "†" if has_retail_flag(item) else ""
 
             table_data.append(row_data)
 
@@ -562,6 +562,28 @@ def build_classification_table():
 
 # Create and display table
 st.header("Classification Table")
+
+# Add help for retail flag with inline explanation
+col1, col2 = st.columns([6, 1])
+with col1:
+    st.markdown(
+        "† **Retail Flag**: Flags items where retail investors show significant positive trading volume in the post period but overall trading volume doesn't.")
+with col2:
+    if st.button("ℹ️ Help", key="retail_flag_help"):
+        st.session_state.show_retail_help = not st.session_state.get('show_retail_help', False)
+
+# Show detailed help if button clicked
+if st.session_state.get('show_retail_help', False):
+    st.info("""
+        **Retail Flag Details:**
+
+        An item receives the retail flag (†) when:
+        - **Retail investors** show significant positive trading volume increase in the post-disclosure period
+        - **Overall trading volume** shows no significant response or negative response
+
+        This indicates items where retail and institutional investors react differently to the same disclosure.
+        """)
+
 classification_df = build_classification_table()
 
 # Display table grouped by category
