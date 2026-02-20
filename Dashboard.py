@@ -27,15 +27,6 @@ st.set_page_config(
 st.title("8-K Item Timeliness and Materiality Dashboard")
 st.markdown("---")
 
-# Filing type selector at the top
-filing_type = st.selectbox(
-    "Filing Type",
-    options=["All Filings", "Gap Filings", "No Gap Filings"],
-    index=0
-)
-
-st.markdown("---")
-
 # Load data
 @st.cache_data
 def load_data(filing_type):
@@ -120,12 +111,15 @@ def load_disclosures():
         st.error(f"disclosures_items_only.csv not found: {e}")
         st.stop()
 
-results_df, residual_sds_df = load_data(filing_type)
-
-disclosures_df = load_disclosures()
-
 # Sidebar controls
 st.sidebar.header("Dashboard Controls")
+
+# Filing type selector to sidebar
+filing_type = st.sidebar.selectbox(
+    "Filing Type",
+    options=["All Filings", "Gap Filings", "No Gap Filings"],
+    index=0
+)
 
 # Time horizon selection
 time_horizon = st.sidebar.selectbox(
@@ -197,6 +191,10 @@ if show_filing_stats:
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("*Adjust controls to dynamically update results*")
+
+results_df, residual_sds_df = load_data(filing_type)
+
+disclosures_df = load_disclosures()
 
 # Helper functions
 def get_critical_value(alpha):
