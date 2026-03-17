@@ -15,7 +15,6 @@ import io
 import os
 import re
 
-
 # Page configuration
 st.set_page_config(
     page_title="8-K Item Analysis Dashboard",
@@ -27,29 +26,95 @@ st.set_page_config(
 st.title("8-K Item Timeliness and Materiality Dashboard")
 st.markdown("---")
 
+
+def parse_dv_name(dv_name):
+    """
+    Parse dependent variable name into components.
+
+    Examples:
+    - log_vol_2per -> (Total Volume, 1 hour, Post, Not Retail, None)
+    - lag_log_vol_4per -> (Total Volume, 2 hours, Pre, Not Retail, None)
+    - abs_ret_33_per -> (Absolute Returns, 24 hours, Post, Not Retail, None)
+    - lag_absret_2per -> (Absolute Returns, 1 hour, Pre, Not Retail, None)
+    - lag_retail_2per -> (Retail Volume, 1 hour, Pre, Retail, Shares Outstanding)
+    - lag_retail_vol_2per -> (Retail Volume, 1 hour, Pre, Retail, Total Volume)
+    - retail_66per -> (Retail Volume, 48 hours, Post, Retail, Shares Outstanding)
+    - retail_vol_66per -> (Retail Volume, 48 hours, Post, Retail, Total Volume)
+    """
+    # Determine horizon (Pre/Post)
+    if dv_name.startswith('lag_'):
+        horizon = 'Pre'
+        dv_name_stripped = dv_name[4:]  # Remove 'lag_' prefix
+    else:
+        horizon = 'Post'
+        dv_name_stripped = dv_name
+
+    # Extract window (periods) - handle both "2per" and "2_per" formats
+    window_match = re.search(r'(\d+)_?per$', dv_name_stripped)
+    if window_match:
+        periods = int(window_match.group(1))
+        window_map = {2: '1 hour', 4: '2 hours', 33: '24 hours', 66: '48 hours'}
+        window = window_map.get(periods, f'{periods} periods')
+        # Remove the period suffix for DV type detection
+        dv_type_str = re.sub(r'_?\d+_?per$', '', dv_name_stripped)
+    else:
+        window = 'Unknown'
+        dv_type_str = dv_name_stripped
+
+    # Determine dependent variable type and retail scaling
+    retail_scaling = None
+    if dv_type_str in ['log_vol', 'vol']:
+        dependent_var = 'Total Volume'
+        retail_flag = 'Not Retail'
+    elif dv_type_str in ['abs_ret', 'absret']:  # Handle both formats
+        dependent_var = 'Absolute Returns'
+        retail_flag = 'Not Retail'
+    elif dv_type_str in ['retail_vol', 'log_retail_vol']:
+        dependent_var = 'Retail Volume'
+        retail_flag = 'Retail'
+        retail_scaling = 'Total Volume'
+    elif dv_type_str in ['retail', 'log_retail']:
+        dependent_var = 'Retail Volume'
+        retail_flag = 'Retail'
+        retail_scaling = 'Shares Outstanding'
+    else:
+        dependent_var = dv_type_str
+        retail_flag = 'Unknown'
+
+    return dependent_var, window, horizon, retail_flag, retail_scaling
+
+
 # Load data
 @st.cache_data
 def load_data(filing_type):
     """Load regression results and residual standard deviations"""
     try:
-        # Determine file prefix based on filing type
+        # Determine file based on filing type
         if filing_type == "Gap Filings":
-            prefix = "gap_"
+            results_file = "regression_results_gap.csv"
         elif filing_type == "No Gap Filings":
-            prefix = "nogap_"
+            results_file = "regression_results_nogap.csv"
         else:  # All Filings
-            prefix = ""
+            results_file = "regression_results_all.csv"
 
-        # Load and combine regression results
-        results_nonretail = pd.read_csv(f'{prefix}regression_results_parsed.csv')
-        results_retail = pd.read_csv(f'{prefix}regression_retail_results_parsed.csv')
-        results = pd.concat([results_nonretail, results_retail], ignore_index=True)
+        # Load regression results
+        results_raw = pd.read_csv(results_file)
+
+        # Parse the DV column to extract components
+        parsed_data = results_raw['dv'].apply(parse_dv_name)
+        results_raw['Dependent_Variable'] = parsed_data.apply(lambda x: x[0])
+        results_raw['Window'] = parsed_data.apply(lambda x: x[1])
+        results_raw['Horizon'] = parsed_data.apply(lambda x: x[2])
+        results_raw['Retail_Flag'] = parsed_data.apply(lambda x: x[3])
+        results_raw['Retail_Scaling'] = parsed_data.apply(lambda x: x[4])
 
         # Rename columns to match expected format
-        results = results.rename(columns={
+        results = results_raw.rename(columns={
             'estimate': 'Coefficient',
             'statistic': 'T_Statistic',
-            'term': 'Item'
+            'term': 'Item',
+            'std.error': 'Std_Error',
+            'p.value': 'P_Value'
         })
 
         # Create Item_Description if missing
@@ -85,13 +150,19 @@ def load_data(filing_type):
             }
             results['Item_Description'] = results['Item'].map(item_desc_map).fillna('Unknown Item')
 
-        # Load and combine residuals
-        residual_sds_nonretail = pd.read_csv('residuals_all_parsed.csv')
-        residual_sds_retail = pd.read_csv('residuals_retail_parsed.csv')
-        residual_sds = pd.concat([residual_sds_nonretail, residual_sds_retail], ignore_index=True)
+        # Load residuals (same file for all filing types)
+        residual_sds_raw = pd.read_csv('regression_results_residuals.csv')
 
-        # Rename columns to match expected format
-        residual_sds = residual_sds.rename(columns={
+        # Parse the DV column for residuals
+        parsed_residuals = residual_sds_raw['dv'].apply(parse_dv_name)
+        residual_sds_raw['Dependent_Variable'] = parsed_residuals.apply(lambda x: x[0])
+        residual_sds_raw['Window'] = parsed_residuals.apply(lambda x: x[1])
+        residual_sds_raw['Horizon'] = parsed_residuals.apply(lambda x: x[2])
+        residual_sds_raw['Retail_Flag'] = parsed_residuals.apply(lambda x: x[3])
+        residual_sds_raw['Retail_Scaling'] = parsed_residuals.apply(lambda x: x[4])
+
+        # Rename columns
+        residual_sds = residual_sds_raw.rename(columns={
             'residual_sd': 'Residual_SD'
         })
 
@@ -100,16 +171,17 @@ def load_data(filing_type):
         st.error(f"Data files not found: {e}. Please ensure all required CSV files are in the directory.")
         st.stop()
 
+
 @st.cache_data
 def load_disclosures():
     """Load the disclosures_items_only.csv file with filing-level data"""
     try:
-
         disclosures = pd.read_csv('disclosures_items_only.csv', low_memory=False)
         return disclosures
     except FileNotFoundError as e:
         st.error(f"disclosures_items_only.csv not found: {e}")
         st.stop()
+
 
 # Sidebar controls
 st.sidebar.header("Dashboard Controls")
@@ -131,6 +203,14 @@ time_horizon = st.sidebar.selectbox(
 # The Window column in your data is already "48 hours", "24 hours", etc.
 # We just use time_horizon directly as the window
 selected_window = time_horizon
+
+# Retail volume scaling toggle
+retail_scaling_option = st.sidebar.radio(
+    "Retail Volume Scaling",
+    options=["Shares Outstanding", "Total Volume"],
+    index=0,
+    help="Choose how retail volume is scaled: by shares outstanding or by total trading volume"
+)
 
 # Significance threshold
 sig_threshold = st.sidebar.slider(
@@ -196,34 +276,39 @@ results_df, residual_sds_df = load_data(filing_type)
 
 disclosures_df = load_disclosures()
 
+
 # Helper functions
 def get_critical_value(alpha):
     """Get critical value for two-tailed test"""
-    return stats.norm.ppf(1 - alpha /2)
+    return stats.norm.ppf(1 - alpha / 2)
+
 
 def is_significant(t_stat, alpha):
     """Check if t-statistic is significant at given alpha level"""
     critical_value = get_critical_value(alpha)
     return abs(t_stat) > critical_value
 
+
 def get_significance_stars(t_stat):
     """Get significance stars based on t-statistic"""
-    if abs(t_stat) > stats.norm.ppf(1 - 0.01 /2):
+    if abs(t_stat) > stats.norm.ppf(1 - 0.01 / 2):
         return "***"
-    elif abs(t_stat) > stats.norm.ppf(1 - 0.05 /2):
+    elif abs(t_stat) > stats.norm.ppf(1 - 0.05 / 2):
         return "**"
-    elif abs(t_stat) > stats.norm.ppf(1 - 0.10 /2):
+    elif abs(t_stat) > stats.norm.ppf(1 - 0.10 / 2):
         return "*"
     else:
         return ""
 
+
 def get_coefficient_value(item, dv, window, horizon, scaled=False):
-    """Get coefficient value for specific item, DV, window, and horizon"""
+    """Get coefficient value for specific item, DV, window, and horizon (non-retail)"""
     row = results_df[
         (results_df['Item'] == item) &
         (results_df['Dependent_Variable'] == dv) &
         (results_df['Window'] == window) &
-        (results_df['Horizon'] == horizon)
+        (results_df['Horizon'] == horizon) &
+        (results_df['Retail_Flag'] == 'Not Retail')
         ]
 
     if row.empty:
@@ -236,13 +321,15 @@ def get_coefficient_value(item, dv, window, horizon, scaled=False):
         sd_row = residual_sds_df[
             (residual_sds_df['Dependent_Variable'] == dv) &
             (residual_sds_df['Window'] == window) &
-            (residual_sds_df['Horizon'] == horizon)
+            (residual_sds_df['Horizon'] == horizon) &
+            (residual_sds_df['Retail_Flag'] == 'Not Retail')
             ]
         if not sd_row.empty:
             sd = sd_row['Residual_SD'].values[0]
             coef = coef / sd
 
     return coef, t_stat
+
 
 def is_current(item):
     """Check if item is current based on total volume"""
@@ -261,6 +348,7 @@ def is_current(item):
     pre_negative = pre_coef <= 0
 
     return post_positive and post_significant and (pre_insignificant or pre_negative)
+
 
 def is_material(item):
     """Check if item is material based on absolute returns"""
@@ -283,7 +371,8 @@ def is_material(item):
         sd_row = residual_sds_df[
             (residual_sds_df['Dependent_Variable'] == 'Absolute Returns') &
             (residual_sds_df['Window'] == selected_window) &
-            (residual_sds_df['Horizon'] == 'Post')
+            (residual_sds_df['Horizon'] == 'Post') &
+            (residual_sds_df['Retail_Flag'] == 'Not Retail')
             ]
 
         if sd_row.empty:
@@ -296,10 +385,13 @@ def is_material(item):
         # Direct comparison in basis points (already converted to decimal)
         return total_effect > materiality_threshold
 
+
 def has_retail_flag(item):
     """Check if retail responds when total volume doesn't"""
-    # Get Retail-specific data (where Retail_Flag == 'Retail')
-    retail_post_coef, retail_post_t = get_coefficient_value_retail(item, 'Total Volume', selected_window, 'Post', 'Retail')
+    # Get Retail-specific data based on the selected retail scaling option
+    retail_post_coef, retail_post_t = get_coefficient_value_retail(
+        item, 'Retail Volume', selected_window, 'Post', 'Retail', retail_scaling_option
+    )
     if retail_post_coef is None:
         return False
 
@@ -307,7 +399,7 @@ def has_retail_flag(item):
     retail_positive = retail_post_coef > 0
 
     # Total volume post must be insignificant or not positive (from non-retail data)
-    total_post_coef, total_post_t = get_coefficient_value_retail(item, 'Total Volume', selected_window, 'Post', 'Not Retail')
+    total_post_coef, total_post_t = get_coefficient_value(item, 'Total Volume', selected_window, 'Post')
     if total_post_coef is None:
         return False
 
@@ -316,15 +408,34 @@ def has_retail_flag(item):
 
     return retail_positive and retail_significant and (total_insignificant or total_not_positive)
 
-def get_coefficient_value_retail(item, dv, window, horizon, retail_flag, scaled=False):
-    """Get coefficient value for specific item, DV, window, horizon, and retail flag"""
-    row = results_df[
-        (results_df['Item'] == item) &
-        (results_df['Dependent_Variable'] == dv) &
-        (results_df['Window'] == window) &
-        (results_df['Horizon'] == horizon) &
-        (results_df['Retail_Flag'] == retail_flag)
-        ]
+
+def get_coefficient_value_retail(item, dv, window, horizon, retail_flag, retail_scaling=None, scaled=False):
+    """Get coefficient value for specific item, DV, window, horizon, retail flag, and scaling"""
+    if retail_flag == 'Retail' and retail_scaling:
+        row = results_df[
+            (results_df['Item'] == item) &
+            (results_df['Dependent_Variable'] == dv) &
+            (results_df['Window'] == window) &
+            (results_df['Horizon'] == horizon) &
+            (results_df['Retail_Flag'] == retail_flag) &
+            (results_df['Retail_Scaling'] == retail_scaling)
+            ]
+    elif retail_flag == 'Not Retail':
+        row = results_df[
+            (results_df['Item'] == item) &
+            (results_df['Dependent_Variable'] == dv) &
+            (results_df['Window'] == window) &
+            (results_df['Horizon'] == horizon) &
+            (results_df['Retail_Flag'] == retail_flag)
+            ]
+    else:
+        row = results_df[
+            (results_df['Item'] == item) &
+            (results_df['Dependent_Variable'] == dv) &
+            (results_df['Window'] == window) &
+            (results_df['Horizon'] == horizon) &
+            (results_df['Retail_Flag'] == retail_flag)
+            ]
 
     if row.empty:
         return None, None
@@ -333,17 +444,27 @@ def get_coefficient_value_retail(item, dv, window, horizon, retail_flag, scaled=
     t_stat = row['T_Statistic'].values[0]
 
     if scaled:
-        sd_row = residual_sds_df[
-            (residual_sds_df['Dependent_Variable'] == dv) &
-            (residual_sds_df['Window'] == window) &
-            (residual_sds_df['Horizon'] == horizon) &
-            (residual_sds_df['Retail_Flag'] == retail_flag)
-            ]
+        if retail_flag == 'Retail' and retail_scaling:
+            sd_row = residual_sds_df[
+                (residual_sds_df['Dependent_Variable'] == dv) &
+                (residual_sds_df['Window'] == window) &
+                (residual_sds_df['Horizon'] == horizon) &
+                (residual_sds_df['Retail_Flag'] == retail_flag) &
+                (residual_sds_df['Retail_Scaling'] == retail_scaling)
+                ]
+        else:
+            sd_row = residual_sds_df[
+                (residual_sds_df['Dependent_Variable'] == dv) &
+                (residual_sds_df['Window'] == window) &
+                (residual_sds_df['Horizon'] == horizon) &
+                (residual_sds_df['Retail_Flag'] == retail_flag)
+                ]
         if not sd_row.empty:
             sd = sd_row['Residual_SD'].values[0]
             coef = coef / sd
 
     return coef, t_stat
+
 
 # Classify all items
 items = results_df['Item'].unique()
@@ -366,6 +487,7 @@ for item in items:
         classifications['material_not_current'].append(item)
     else:
         classifications['neither'].append(item)
+
 
 def calculate_filing_statistics(classifications, disclosures_df, filing_type, include_901=True):
     """Calculate filing-level statistics based on item classifications"""
@@ -457,6 +579,7 @@ def calculate_filing_statistics(classifications, disclosures_df, filing_type, in
     stats['total_filings'] = total_filings
     return stats
 
+
 # Summary statistics
 st.header("Summary")
 
@@ -502,6 +625,7 @@ if show_filing_stats:
 
 st.markdown("---")
 
+
 # Build classification table
 def build_classification_table():
     """Build the full classification table"""
@@ -518,12 +642,12 @@ def build_classification_table():
                 'Category': category.replace('_', ' ').title(),
                 'Item': item.replace('_', ' '),
                 'Description': description,
-                'N': f"{disclosures_df[item].sum():,.0f}"
+                'N': f"{disclosures_df[item].sum():,.0f}" if item in disclosures_df.columns else "N/A"
             }
 
             # Total Volume (Non-Retail)
-            tv_pre_coef, tv_pre_t = get_coefficient_value_retail(item, 'Total Volume', selected_window, 'Pre', 'Not Retail', scale_by_sd)
-            tv_post_coef, tv_post_t = get_coefficient_value_retail(item, 'Total Volume', selected_window, 'Post', 'Not Retail', scale_by_sd)
+            tv_pre_coef, tv_pre_t = get_coefficient_value(item, 'Total Volume', selected_window, 'Pre', scale_by_sd)
+            tv_post_coef, tv_post_t = get_coefficient_value(item, 'Total Volume', selected_window, 'Post', scale_by_sd)
             if tv_pre_coef is not None and tv_post_coef is not None:
                 row_data['Total_Vol_Pre'] = f"{tv_pre_coef:.4f}{get_significance_stars(tv_pre_t)}"
                 row_data['Total_Vol_Post'] = f"{tv_post_coef:.4f}{get_significance_stars(tv_post_t)}"
@@ -531,9 +655,13 @@ def build_classification_table():
                 row_data['Total_Vol_Pre'] = "N/A"
                 row_data['Total_Vol_Post'] = "N/A"
 
-            # Retail Volume
-            rv_pre_coef, rv_pre_t = get_coefficient_value_retail(item, 'Total Volume', selected_window, 'Pre', 'Retail', scale_by_sd)
-            rv_post_coef, rv_post_t = get_coefficient_value_retail(item, 'Total Volume', selected_window, 'Post', 'Retail', scale_by_sd)
+            # Retail Volume (based on selected scaling)
+            rv_pre_coef, rv_pre_t = get_coefficient_value_retail(
+                item, 'Retail Volume', selected_window, 'Pre', 'Retail', retail_scaling_option, scale_by_sd
+            )
+            rv_post_coef, rv_post_t = get_coefficient_value_retail(
+                item, 'Retail Volume', selected_window, 'Post', 'Retail', retail_scaling_option, scale_by_sd
+            )
             if rv_pre_coef is not None and rv_post_coef is not None:
                 row_data['Retail_Vol_Pre'] = f"{rv_pre_coef:.4f}{get_significance_stars(rv_pre_t)}"
                 row_data['Retail_Vol_Post'] = f"{rv_post_coef:.4f}{get_significance_stars(rv_post_t)}"
@@ -542,8 +670,9 @@ def build_classification_table():
                 row_data['Retail_Vol_Post'] = "N/A"
 
             # Absolute Returns (Non-Retail)
-            ar_pre_coef, ar_pre_t = get_coefficient_value_retail(item, 'Absolute Returns', selected_window, 'Pre', 'Not Retail', scale_by_sd)
-            ar_post_coef, ar_post_t = get_coefficient_value_retail(item, 'Absolute Returns', selected_window, 'Post', 'Not Retail', scale_by_sd)
+            ar_pre_coef, ar_pre_t = get_coefficient_value(item, 'Absolute Returns', selected_window, 'Pre', scale_by_sd)
+            ar_post_coef, ar_post_t = get_coefficient_value(item, 'Absolute Returns', selected_window, 'Post',
+                                                            scale_by_sd)
             if ar_pre_coef is not None and ar_post_coef is not None:
                 row_data['Returns_Pre'] = f"{ar_pre_coef:.4f}{get_significance_stars(ar_pre_t)}"
                 row_data['Returns_Post'] = f"{ar_post_coef:.4f}{get_significance_stars(ar_post_t)}"
@@ -558,8 +687,12 @@ def build_classification_table():
 
     return pd.DataFrame(table_data)
 
+
 # Create and display table
 st.header("Classification Table")
+
+# Show which retail scaling is being used
+st.markdown(f"*Retail Volume scaled by: **{retail_scaling_option}***")
 
 # Add help for retail flag with inline explanation
 col1, col2 = st.columns([6, 1])
@@ -590,7 +723,7 @@ for category in ['Current Material', 'Current Not Material', 'Material Not Curre
     category_data = classification_df[classification_df['Category'] == category]
     if not category_data.empty:
         display_df = category_data.drop('Category', axis=1)
-        st.dataframe(display_df, width='stretch', hide_index=True)
+        st.dataframe(display_df, width="stretch", hide_index=True)
     else:
         st.write("*No items in this category*")
 
@@ -611,14 +744,23 @@ st.markdown("---")
 st.header("Coefficient Visualizations")
 st.markdown("*Bars show raw coefficients with 95% confidence intervals*")
 
-def create_bar_chart(dv, dv_name, retail_flag='Not Retail'):
+
+def create_bar_chart(dv, dv_name, retail_flag='Not Retail', retail_scaling=None):
     """Create bar chart for a specific dependent variable"""
     # Get data for all items
     chart_data = []
 
     for item in items:
-        pre_coef, pre_t = get_coefficient_value_retail(item, dv, selected_window, 'Pre', retail_flag, scaled=False)
-        post_coef, post_t = get_coefficient_value_retail(item, dv, selected_window, 'Post', retail_flag, scaled=False)
+        if retail_flag == 'Retail':
+            pre_coef, pre_t = get_coefficient_value_retail(
+                item, dv, selected_window, 'Pre', retail_flag, retail_scaling, scaled=False
+            )
+            post_coef, post_t = get_coefficient_value_retail(
+                item, dv, selected_window, 'Post', retail_flag, retail_scaling, scaled=False
+            )
+        else:
+            pre_coef, pre_t = get_coefficient_value(item, dv, selected_window, 'Pre', scaled=False)
+            post_coef, post_t = get_coefficient_value(item, dv, selected_window, 'Post', scaled=False)
 
         if pre_coef is not None and post_coef is not None:
             # Calculate standard errors and confidence intervals
@@ -690,13 +832,14 @@ def create_bar_chart(dv, dv_name, retail_flag='Not Retail'):
 
     return fig
 
+
 # Create charts for each dependent variable
 st.subheader("Total Volume")
 fig_tv = create_bar_chart('Total Volume', 'Total Volume', 'Not Retail')
 st.plotly_chart(fig_tv, width='stretch')
 
-st.subheader("Retail Volume")
-fig_rv = create_bar_chart('Total Volume', 'Retail Volume', 'Retail')
+st.subheader(f"Retail Volume (scaled by {retail_scaling_option})")
+fig_rv = create_bar_chart('Retail Volume', f'Retail Volume ({retail_scaling_option})', 'Retail', retail_scaling_option)
 st.plotly_chart(fig_rv, width='stretch')
 
 st.subheader("Absolute Returns")
@@ -735,10 +878,10 @@ try:
             mime="image/png"
         )
 except Exception as e:
-    st.info \
-        ("💡 Chart downloads require Kaleido and Chrome. You can still interact with the charts above and use your browser's screenshot feature to save them.")
+    st.info(
+        "💡 Chart downloads require Kaleido and Chrome. You can still interact with the charts above and use your browser's screenshot feature to save them.")
 
 # Footer
 st.markdown("---")
-st.markdown \
-    ("*Dashboard for analyzing 8-K item timeliness and materiality | Data updates dynamically with control changes*")
+st.markdown(
+    "*Dashboard for analyzing 8-K item timeliness and materiality | Data updates dynamically with control changes*")
