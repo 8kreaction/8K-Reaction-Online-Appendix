@@ -185,6 +185,7 @@ def load_disclosures():
 
 # Sidebar controls
 st.sidebar.header("Dashboard Controls")
+st.sidebar.markdown("*Adjust controls to dynamically update results*")
 
 # Filing type selector to sidebar
 filing_type = st.sidebar.selectbox(
@@ -203,14 +204,6 @@ time_horizon = st.sidebar.selectbox(
 # The Window column in your data is already "48 hours", "24 hours", etc.
 # We just use time_horizon directly as the window
 selected_window = time_horizon
-
-# Retail volume scaling toggle
-retail_scaling_option = st.sidebar.radio(
-    "Retail Volume Scaling",
-    options=["Shares Outstanding", "Total Volume"],
-    index=0,
-    help="Choose how retail volume is scaled: by shares outstanding or by total trading volume"
-)
 
 # Significance threshold
 sig_threshold = st.sidebar.slider(
@@ -254,6 +247,14 @@ else:
         step=5
     ) / 10000  # Convert basis points to decimal
 
+# Retail volume scaling toggle
+retail_scaling_option = st.sidebar.radio(
+    "Retail Volume Scaling",
+    options=["Shares Outstanding", "Total Volume"],
+    index=0,
+    help="Choose how retail volume is scaled: by shares outstanding or by total trading volume"
+)
+
 # Filing-level statistics toggle
 show_filing_stats = st.sidebar.checkbox(
     "Show filing-level statistics",
@@ -270,7 +271,6 @@ if show_filing_stats:
     )
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("*Adjust controls to dynamically update results*")
 
 results_df, residual_sds_df = load_data(filing_type)
 
@@ -631,6 +631,13 @@ def build_classification_table():
     """Build the full classification table"""
     table_data = []
 
+    category_label_map = {
+        'current_material': 'Current and Material',
+        'current_not_material': 'Current but Not Material',
+        'material_not_current': 'Material but Not Current',
+        'neither': 'Neither Current nor Material'
+    }
+
     for category in ['current_material', 'current_not_material', 'material_not_current', 'neither']:
         for item in classifications[category]:
             # Get item description
@@ -639,7 +646,7 @@ def build_classification_table():
 
             # Get all coefficients
             row_data = {
-                'Category': category.replace('_', ' ').title(),
+                'Category': category_label_map.get(category, category.replace('_', ' ').title()),
                 'Item': item.replace('_', ' '),
                 'Description': description,
                 'N': f"{disclosures_df[item].sum():,.0f}" if item in disclosures_df.columns else "N/A"
@@ -691,9 +698,6 @@ def build_classification_table():
 # Create and display table
 st.header("Classification Table")
 
-# Show which retail scaling is being used
-st.markdown(f"*Retail Volume scaled by: **{retail_scaling_option}***")
-
 # Add help for retail flag with inline explanation
 col1, col2 = st.columns([6, 1])
 with col1:
@@ -718,7 +722,12 @@ if st.session_state.get('show_retail_help', False):
 classification_df = build_classification_table()
 
 # Display table grouped by category
-for category in ['Current Material', 'Current Not Material', 'Material Not Current', 'Neither']:
+for category in [
+    'Current and Material',
+    'Current but Not Material',
+    'Material but Not Current',
+    'Neither Current nor Material'
+]:
     st.subheader(category)
     category_data = classification_df[classification_df['Category'] == category]
     if not category_data.empty:
