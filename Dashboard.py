@@ -205,6 +205,12 @@ time_horizon = st.sidebar.selectbox(
 # We just use time_horizon directly as the window
 selected_window = time_horizon
 
+# Coefficient scaling toggle
+scale_by_sd = st.sidebar.checkbox(
+    "Scale coefficients by residual standard deviations",
+    value=True
+)
+
 # Significance threshold
 sig_threshold = st.sidebar.slider(
     "Significance Level for 'Current' Classification (%)",
@@ -222,12 +228,6 @@ materiality_sig_threshold = st.sidebar.slider(
     value=5.0,
     step=1.0
 ) / 100
-
-# Coefficient scaling toggle
-scale_by_sd = st.sidebar.checkbox(
-    "Scale coefficients by residual standard deviations",
-    value=True
-)
 
 # Materiality threshold (changes based on scaling)
 if scale_by_sd:
@@ -703,6 +703,9 @@ col1, col2 = st.columns([6, 1])
 with col1:
     st.markdown(
         "† **Retail Flag**: Flags items where retail investors show significant positive trading volume in the post period but overall trading volume doesn't.")
+    st.markdown(
+        "*, **, *** represent statistical significance at the 0.10, 0.05, and 0.01 levels, respectively."
+    )
 with col2:
     if st.button("ℹ️ Help", key="retail_flag_help"):
         st.session_state.show_retail_help = not st.session_state.get('show_retail_help', False)
